@@ -1,23 +1,32 @@
-import { useState, useEffect } from 'react';
-import { Film, LogOut, Plus, X, Settings } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { MovieCard } from '@/components/MovieCard';
-import { ReviewForm } from '@/components/ReviewForm';
-import { ReviewList } from '@/components/ReviewList';
-import { ProfileSettings } from '@/components/ProfileSettings';
-import { useToast } from '@/hooks/use-toast';
-import { mockAuth, type User } from '@/lib/auth';
-import { mockMovies, mockReviews, type Movie, type Review } from '@/lib/movies';
-
+import { useState, useEffect } from "react";
+import { Film, LogOut, Plus, X, Settings } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { MovieCard } from "@/components/MovieCard";
+import { ReviewForm } from "@/components/ReviewForm";
+import { ReviewList } from "@/components/ReviewList";
+import { ProfileSettings } from "@/components/ProfileSettings";
+import { useToast } from "@/hooks/use-toast";
+import { mockAuth, type User } from "@/lib/auth";
+import { mockMovies, mockReviews, type Movie, type Review } from "@/lib/movies";
+import { authApi } from "@/lib/authApi";
+import { moviesApi } from "@/lib/moviesApi";
+import { reviewsApi } from "@/lib/reviewsApi";
 interface DashboardProps {
   onLogout: () => void;
 }
 
 export const Dashboard = ({ onLogout }: DashboardProps) => {
   const [user, setUser] = useState<User | null>(null);
+  const [movies, setMovies] = useState<Movie[]>([]);
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -25,15 +34,38 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
   const { toast } = useToast();
 
   useEffect(() => {
-    const currentUser = mockAuth.getCurrentUser();
+    const currentUser = authApi.getCurrentUser();
     setUser(currentUser);
+  }, []);
+  useEffect(() => {
+    moviesApi
+      .getAll()
+      .then((data) => {
+        const normalized = data.map((m) => ({
+          id: m._id,
+          title: m.title,
+          year: m.year,
+          genre: m.genre,
+          description: m.description || "",
+          poster: m.poster || "",
+          rating: m.rating ?? 0,
+          reviewCount: m.reviewCount ?? 0,
+        }));
+        setMovies(normalized);
+      })
+      .catch((err) =>
+        toast({
+          title: "Error",
+          description: err.message || "Failed to load movies",
+          variant: "destructive",
+        })
+      );
   }, []);
 
   const handleLogout = () => {
-    mockAuth.logout();
+    authApi.logout();
     onLogout();
   };
-
   const handleMovieClick = (movie: Movie) => {
     setSelectedMovie(movie);
   };
@@ -41,31 +73,70 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
   const handleAddReview = () => {
     setShowReviewForm(true);
   };
+  useEffect(() => {
+    if (!selectedMovie) return;
 
-  const handleSubmitReview = (rating: number, comment: string) => {
+    reviewsApi
+      .getByMovie(selectedMovie.id)
+      .then((data) => {
+        const normalized = data.map((r) => ({
+          id: r._id || Date.now().toString(),
+          movieId: r.movieId || selectedMovie.id,
+          userId: r.userId,
+          userName: r.userName || "Anonymous",
+          rating: r.rating,
+          comment: r.comment,
+          date: r.date || new Date().toISOString(),
+        }));
+        setReviews(normalized);
+      })
+      .catch((err) =>
+        toast({
+          title: "Error",
+          description: err.message || "Failed to load reviews",
+          variant: "destructive",
+        })
+      );
+  }, [selectedMovie]);
+
+  const handleSubmitReview = async (rating: number, comment: string) => {
     if (!user || !selectedMovie) return;
 
-    const newReview: Review = {
-      id: Date.now().toString(),
-      movieId: selectedMovie.id,
-      userId: user.id,
-      userName: user.name,
-      rating,
-      comment,
-      date: new Date().toISOString().split('T')[0]
-    };
+    try {
+      const review = await reviewsApi.add(selectedMovie.id, rating, comment);
 
-    setReviews(prev => [newReview, ...prev]);
-    setShowReviewForm(false);
-    
-    toast({
-      title: "Review submitted!",
-      description: `Thank you for reviewing "${selectedMovie.title}"`,
-    });
+      const newReview: Review = {
+        id: review._id || Date.now().toString(),
+        movieId: selectedMovie.id,
+        userId: user.id,
+        userName: user.name,
+        rating: review.rating,
+        comment: review.comment,
+        date: review.createdAt || new Date().toISOString(),
+      };
+
+      setReviews((prev) => [newReview, ...prev]);
+      setShowReviewForm(false);
+
+      const updatedMovie = await moviesApi.getById(selectedMovie.id);
+      setMovies((prev) => prev.map((m) => (m.id === selectedMovie.id ? { ...m, ...updatedMovie } : m)));
+      setSelectedMovie((prev) => (prev ? { ...prev, ...updatedMovie } : prev));
+
+      toast({
+        title: "Review submitted!",
+        description: `Thank you for reviewing "${selectedMovie.title}"`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Error",
+        description: err.message || "Failed to submit review",
+        variant: "destructive",
+      });
+    }
   };
 
   const getMovieReviews = (movieId: string) => {
-    return reviews.filter(review => review.movieId === movieId);
+    return reviews.filter((review) => review.movieId === movieId);
   };
 
   const closeMovieDialog = () => {
@@ -96,15 +167,13 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
               <p className="text-sm text-muted-foreground">Welcome back, {user.name}</p>
             </div>
           </div>
-          
+
           <div className="flex items-center gap-3">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-8 w-8 rounded-full">
                   <Avatar>
-                    <AvatarFallback>
-                      {user.name.charAt(0).toUpperCase()}
-                    </AvatarFallback>
+                    <AvatarFallback>{user.name.charAt(0).toUpperCase()}</AvatarFallback>
                   </Avatar>
                 </Button>
               </DropdownMenuTrigger>
@@ -112,9 +181,7 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
                 <div className="flex items-center justify-start gap-2 p-2">
                   <div className="flex flex-col space-y-1 leading-none">
                     <p className="font-medium">{user.name}</p>
-                    <p className="w-[200px] truncate text-sm text-muted-foreground">
-                      {user.email}
-                    </p>
+                    <p className="w-[200px] truncate text-sm text-muted-foreground">{user.email}</p>
                   </div>
                 </div>
                 <DropdownMenuSeparator />
@@ -141,12 +208,8 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {mockMovies.map((movie) => (
-            <MovieCard
-              key={movie.id}
-              movie={movie}
-              onClick={() => handleMovieClick(movie)}
-            />
+          {movies.map((movie) => (
+            <MovieCard key={movie.id} movie={movie} onClick={() => handleMovieClick(movie)} />
           ))}
         </div>
       </main>
@@ -189,7 +252,7 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
                         Add Review
                       </Button>
                     </div>
-                    
+
                     <ReviewList reviews={getMovieReviews(selectedMovie.id)} />
                   </div>
                 )}
@@ -208,13 +271,8 @@ export const Dashboard = ({ onLogout }: DashboardProps) => {
               Profile Settings
             </DialogTitle>
           </DialogHeader>
-          
-          {user && (
-            <ProfileSettings 
-              user={user} 
-              onClose={closeSettingsDialog}
-            />
-          )}
+
+          {user && <ProfileSettings user={user} onClose={closeSettingsDialog} />}
         </DialogContent>
       </Dialog>
     </div>

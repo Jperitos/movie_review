@@ -1,11 +1,11 @@
-import { useState } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
-import { mockAuth } from '@/lib/auth';
-
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { mockAuth } from "@/lib/auth";
+import { authApi } from "@/lib/authApi";
 interface AuthFormProps {
   isLogin: boolean;
   onSuccess: () => void;
@@ -13,9 +13,9 @@ interface AuthFormProps {
 }
 
 export const AuthForm = ({ isLogin, onSuccess, onToggleMode }: AuthFormProps) => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
@@ -25,22 +25,17 @@ export const AuthForm = ({ isLogin, onSuccess, onToggleMode }: AuthFormProps) =>
 
     try {
       if (isLogin) {
-        const user = await mockAuth.login(email, password);
-        if (user) {
-          toast({
-            title: "Welcome back!",
-            description: `Logged in as ${user.name}`,
-          });
-          onSuccess();
-        } else {
-          toast({
-            title: "Login failed",
-            description: "Invalid credentials. Try demo@movie.com",
-            variant: "destructive"
-          });
-        }
+        const res = await authApi.login(email, password);
+        localStorage.setItem("token", res.token);
+        localStorage.setItem("user", JSON.stringify(res.user));
+
+        toast({
+          title: "Welcome back!",
+          description: `Logged in as ${res.user.name}`,
+        });
+        onSuccess();
       } else {
-        await mockAuth.register(email, password, name);
+        await authApi.register(name, email, password);
         toast({
           title: "Account created!",
           description: "Welcome to MovieReviews",
@@ -51,7 +46,7 @@ export const AuthForm = ({ isLogin, onSuccess, onToggleMode }: AuthFormProps) =>
       toast({
         title: "Error",
         description: "Something went wrong",
-        variant: "destructive"
+        variant: "destructive",
       });
     } finally {
       setIsLoading(false);
@@ -61,19 +56,12 @@ export const AuthForm = ({ isLogin, onSuccess, onToggleMode }: AuthFormProps) =>
   return (
     <Card className="w-full max-w-md movie-card">
       <CardHeader className="space-y-1">
-        <CardTitle className="text-2xl text-center">
-          {isLogin ? 'Welcome Back' : 'Create Account'}
-        </CardTitle>
+        <CardTitle className="text-2xl text-center">{isLogin ? "Welcome Back" : "Create Account"}</CardTitle>
         <CardDescription className="text-center">
-          {isLogin 
-            ? 'Sign in to your account to continue' 
-            : 'Join our movie review community'
-          }
+          {isLogin ? "Sign in to your account to continue" : "Join our movie review community"}
         </CardDescription>
         {isLogin && (
-          <p className="text-sm text-muted-foreground text-center mt-2">
-            Demo: demo@movie.com / any password
-          </p>
+          <p className="text-sm text-muted-foreground text-center mt-2">Demo: demo@movie.com / any password</p>
         )}
       </CardHeader>
       <CardContent>
@@ -113,15 +101,12 @@ export const AuthForm = ({ isLogin, onSuccess, onToggleMode }: AuthFormProps) =>
             />
           </div>
           <Button type="submit" className="w-full gold-gradient" disabled={isLoading}>
-            {isLoading ? 'Loading...' : (isLogin ? 'Sign In' : 'Create Account')}
+            {isLoading ? "Loading..." : isLogin ? "Sign In" : "Create Account"}
           </Button>
         </form>
         <div className="mt-4 text-center">
           <Button variant="link" onClick={onToggleMode}>
-            {isLogin 
-              ? "Don't have an account? Sign up" 
-              : "Already have an account? Sign in"
-            }
+            {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
           </Button>
         </div>
       </CardContent>
